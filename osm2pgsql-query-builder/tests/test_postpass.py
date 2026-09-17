@@ -23,7 +23,6 @@ from osm2pgsql_query_builder.postpass_module import (
     PostPassQueryParams,
     build_postpass_bbox_filter,
     build_postpass_query,
-    wrap_postpass_geojson,
 )
 
 # ---------------------------------------------------------------------------
@@ -285,45 +284,7 @@ def test_query_attribute_with_colon_sanitized():
     assert "addr_street" in sql
 
 
-# ---------------------------------------------------------------------------
-# wrap_postpass_geojson
-# ---------------------------------------------------------------------------
-
-
-def test_wrap_geojson_structure():
-    inner = "SELECT osm_id, tags, geom FROM postpass_point WHERE geom && bbox"
-    wrapped = wrap_postpass_geojson(inner)
-    assert "json_build_object" in wrapped
-    assert "'FeatureCollection'" in wrapped
-    assert "ST_AsGeoJSON" in wrapped
-    assert "COALESCE" in wrapped
-    assert "[]" in wrapped  # empty fallback
-
-
-def test_wrap_geojson_strips_trailing_semicolon():
-    inner = "SELECT osm_id, tags, geom FROM postpass_point;"
-    wrapped = wrap_postpass_geojson(inner)
-    # The inner query should not contain the semicolon
-    assert "postpass_point;" not in wrapped
-
-
-def test_full_pipeline_bbox():
-    """End-to-end: bbox params → query → wrapped GeoJSON SQL."""
-    params = PostPassQueryParams(
-        bbox=NAIROBI_BBOX,
-        geometry_type=["point"],
-        filters={
-            "tags": {
-                "all_geometry": {"join_or": {"amenity": ["school", "hospital"]}}
-            }
-        },
-    )
-    sql = wrap_postpass_geojson(build_postpass_query(params))
-    assert "FeatureCollection" in sql
-    assert "postpass_point" in sql
-    assert "amenity" in sql
-
-
+####
 def test_full_pipeline_from_polygon():
     """End-to-end: polygon geometry → bbox derived → query built."""
     params = PostPassQueryParams(
@@ -341,9 +302,22 @@ def test_top_level_import():
         BboxFilter,
         PostPassQueryParams,
         build_postpass_query,
-        wrap_postpass_geojson,
     )
     assert BboxFilter is not None
     assert PostPassQueryParams is not None
     assert callable(build_postpass_query)
-    assert callable(wrap_postpass_geojson)
+
+
+def test_build_postpass_query_no_json_wrapping():
+    """
+    Regression: build_postpass_query output must never contain json_build_object
+    or json_agg. PostPass auto-converts to GeoJSON when the top-level SELECT
+    has a column named 'geom'. Wrapping it hides that column in a subquery and
+    causes a 400 'pq: geometry column is missing' error.
+    Confirmed against the live PostPass API by @dulcetberg.
+    """
+    params = PostPassQueryParams(bbox=NAIROBI_BBOX, geometry_type=["point"])
+    sql = build_postpass_query(params)
+    assert "json_build_object" not in sql
+    assert "json_agg" not in sql
+    assert "geom" in sql

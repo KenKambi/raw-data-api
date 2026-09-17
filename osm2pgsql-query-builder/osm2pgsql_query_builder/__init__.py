@@ -4,7 +4,6 @@ from .postpass_module import (
     PostPassQueryParams,
     build_postpass_bbox_filter,
     build_postpass_query,
-    wrap_postpass_geojson,
 )
 from .builder import (
     build_column_select,
@@ -66,5 +65,4 @@ __all__ = [
     "PostPassQueryParams",
     "build_postpass_bbox_filter",
     "build_postpass_query",
-    "wrap_postpass_geojson",
-]
+    ]

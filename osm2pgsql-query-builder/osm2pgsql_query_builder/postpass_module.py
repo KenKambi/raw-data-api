@@ -14,27 +14,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """PostPass query builder.
-
-Generates SQL for the Geofabrik PostPass API
-(https://postpass.geofabrik.de/api/0.2/interpreter).
-
-PostPass and osm2pgsql use the same tag column format (``tags ->> 'key'``)
-so all filter helpers are reused from this package.  The only
-PostPass-specific pieces are:
-
-* Different table names: ``postpass_point``, ``postpass_line``,
-  ``postpass_polygon``
-* Bbox geometry expressed with the ``&&`` operator (fast index scan)
-  rather than ``ST_intersects`` against a full polygon
-* A ``json_build_object`` GeoJSON wrapper suitable for the PostPass
-  HTTP response format
-
+...
 Example usage::
 
     from osm2pgsql_query_builder.postpass import (
         PostPassQueryParams,
         build_postpass_query,
-        wrap_postpass_geojson,
     )
 
     params = PostPassQueryParams(
@@ -45,7 +30,8 @@ Example usage::
         geometry_type=["point"],
     )
 
-    sql = wrap_postpass_geojson(build_postpass_query(params))
+    sql = build_postpass_query(params)
+    # Send sql directly to PostPass — it returns GeoJSON automatically
 """
 
 from __future__ import annotations
@@ -406,34 +392,34 @@ def build_postpass_query(
     return "\nUNION ALL\n".join(sub_queries)
 
 
-def wrap_postpass_geojson(base_sql: str) -> str:
-    """Wrap a SELECT query in a GeoJSON FeatureCollection builder.
-
-    The inner query must return at least ``osm_id``, ``geom``, and ``tags``.
-    The ``COALESCE`` ensures an empty ``[]`` is returned rather than ``null``
-    when no features match.
-
-    Args:
-        base_sql: Raw SQL from :func:`build_postpass_query`.
-
-    Returns:
-        SQL that produces a single-row result containing the full
-        GeoJSON FeatureCollection as a JSON object.
-    """
-    inner = base_sql.rstrip(";")
-    return (
-        "SELECT json_build_object(\n"
-        "    'type', 'FeatureCollection',\n"
-        "    'features', COALESCE(json_agg(\n"
-        "        json_build_object(\n"
-        "            'type',       'Feature',\n"
-        "            'id',         sub.osm_id,\n"
-        "            'geometry',   ST_AsGeoJSON(sub.geom)::json,\n"
-        "            'properties', sub.tags\n"
-        "        )\n"
-        "    ), '[]'::json)\n"
-        ")\n"
-        f"FROM (\n{inner}\n) AS sub"
-    )
+# def wrap_postpass_geojson(base_sql: str) -> str:
+#     """Wrap a SELECT query in a GeoJSON FeatureCollection builder.
+#
+#     The inner query must return at least ``osm_id``, ``geom``, and ``tags``.
+#     The ``COALESCE`` ensures an empty ``[]`` is returned rather than ``null``
+#     when no features match.
+#
+#     Args:
+#         base_sql: Raw SQL from :func:`build_postpass_query`.
+#
+#     Returns:
+#         SQL that produces a single-row result containing the full
+#         GeoJSON FeatureCollection as a JSON object.
+#     """
+#     inner = base_sql.rstrip(";")
+#     return (
+#         "SELECT json_build_object(\n"
+#         "    'type', 'FeatureCollection',\n"
+#         "    'features', COALESCE(json_agg(\n"
+#         "        json_build_object(\n"
+#         "            'type',       'Feature',\n"
+#         "            'id',         sub.osm_id,\n"
+#         "            'geometry',   ST_AsGeoJSON(sub.geom)::json,\n"
+#         "            'properties', sub.tags\n"
+#         "        )\n"
+#         "    ), '[]'::json)\n"
+#         ")\n"
+#         f"FROM (\n{inner}\n) AS sub"
+#     )
 
 
